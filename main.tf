@@ -8,19 +8,6 @@ terraform {
   }
 }
 
-# Declare variables.
-variable "aws_region" {
-  description = "Region in which AWS resources to be created"
-  type        = string
-  default     = "us-east-1" #AWS region. Update the value to your desired AWS region.
-}
-
-variable "ec2_ami_id" {
-  description = "AMI ID your EC2 instance will be created with"
-  type        = string
-  default     = "ami-03ededff12e34e59e" #Amazon2 Linux AMI ID. Update value to your desired AMI ID.
-}
-
 # Provider Block
 provider "aws" {
   region  = var.aws_region
@@ -28,8 +15,8 @@ provider "aws" {
 }
 
 # Create Security Group resource
-resource "aws_security_group" "dev-vpc-sg" {
-  name        = "test-learn-sg"
+resource "aws_security_group" "education-example-sg" {
+  name        = "education-example-sg"
   description = "Learn tutorial Security Group"
   
 ingress {
@@ -49,23 +36,93 @@ ingress {
   }
 }
 
+ resource "aws_iam_role" "education_example_role" {
+  name = "test-role"
+
+  assume_role_policy = <<EOF
+{
+   "Version": "2012-10-17",
+   "Statement": [
+     {
+       "Action": "sts:AssumeRole",
+       "Principal": {
+         "Service": "ec2.amazonaws.com"
+       },
+       "Effect": "Allow",
+       "Sid": ""
+     }
+   ]
+ }
+ EOF
+ }
+
+ resource "aws_iam_instance_profile" "education_example_profile" {
+  name = "education_example_profile"
+  role = "${aws_iam_role.education_example_role.name}"
+}
+
+ resource "aws_iam_role_policy" "education_example_policy" {
+  name        = "education-example-policy"
+  role        = "${aws_iam_role.education_example_role.id}"
+
+  policy = <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "ec2:Describe*",
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": "elasticloadbalancing:Describe*",
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:ListMetrics",
+                "cloudwatch:GetMetricStatistics",
+                "cloudwatch:Describe*"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": "autoscaling:Describe*",
+            "Resource": "*"
+        }
+    ]
+}
+ EOF
+ }
+
 # Create EC2 Instance
 resource "aws_instance" "example_learn_instance" {
   ami                    = var.ec2_ami_id
   instance_type          = "t2.micro"
-  vpc_security_group_ids = [aws_security_group.dev-vpc-sg.id]
-  #subnet_id = "id of subnet where TFE instance resides"
-  user_data = file("prometheus-install.sh")
+  vpc_security_group_ids = [aws_security_group.education-example-sg.id]
+  subnet_id              = var.subnet_id
+  iam_instance_profile   = "${aws_iam_instance_profile.education_example_profile.name}"
+  user_data = templatefile("prometheus-install.sh.tftpl", { tfe_tag_name = var.tfe_tag_name })
   tags = {
     "Name" = "example_learn_instance"
   }    
 }
 
 # The IP address of your test EC2 instance will be display in this output after the Terraform apply command completes.
- output "public_ip" {
-   description = "Access your prometheus dashboard over port 9090, and Grafana dashboard over port 3000."
-   value       = aws_instance.example_learn_instance.public_ip
-}
+ output "b_prometheus_dashboard_ip" {
+   description = "Prometheus instance dashboard"
+   value       = "http://${aws_instance.example_learn_instance.public_ip}:9090/graph"
+ }
+
+ output "c_grafana_dashboard_ip" {
+   description = "Grafana instance dashboard"
+   value       = "http://${aws_instance.example_learn_instance.public_ip}:3000"
+ }
+
+
 
 
 
